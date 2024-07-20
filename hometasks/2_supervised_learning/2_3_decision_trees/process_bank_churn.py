@@ -1,8 +1,5 @@
-
-
-
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.preprocessing import OneHotEncoder
 import pandas as pd
 
@@ -21,7 +18,7 @@ def split_data(raw_df: pd.DataFrame, test_size: float = 0.2, random_state: int =
     """
     return train_test_split(raw_df, test_size=test_size, random_state=random_state, stratify=raw_df['Exited'])
 
-def get_input_cols(raw_df: pd.DataFrame) -> list:
+def get_input_target_cols(raw_df: pd.DataFrame) -> list:
     """
     Get the input column names.
 
@@ -31,7 +28,7 @@ def get_input_cols(raw_df: pd.DataFrame) -> list:
     Returns:
     - input_cols (list): The input column names.
     """
-    return raw_df.columns[1:-1].tolist()
+    return raw_df.columns[1:-1].tolist(), raw_df.columns[-1]
 
 def get_numeric_cols(df: pd.DataFrame) -> list:
     """
@@ -99,7 +96,9 @@ def train_scaler(df: pd.DataFrame, cols: list) -> StandardScaler:
     Returns:
     - scaler (StandardScaler): The trained scaler.
     """
-    scaler = StandardScaler()
+    # scaler = StandardScaler()
+    scaler = MinMaxScaler()
+
     scaler.fit(df[cols])
     return scaler
 
@@ -119,6 +118,26 @@ def transform_with_scaler(df: pd.DataFrame, scaler: StandardScaler, cols: list) 
     return df
 
                         
+def split_into_inputs_and_targets(train_df: pd.DataFrame, val_df: pd.DataFrame, input_cols: list, target_col: str) -> tuple:
+    """
+    Split the data into inputs and targets for training and validation.
+
+    Args:
+    - train_df (pd.DataFrame): The training data.
+    - val_df (pd.DataFrame): The validation data.
+    - input_cols (list): The input column names.
+    - target_col (str): The target column name.
+
+    Returns:
+    - train_inputs (pd.DataFrame): The training inputs.
+    - train_targets (pd.Series): The training targets.
+    - val_inputs (pd.DataFrame): The validation inputs.
+    - val_targets (pd.Series): The validation targets.
+    """
+    train_inputs, train_targets = train_df[input_cols], train_df[target_col]
+    val_inputs, val_targets = val_df[input_cols], val_df[target_col]
+
+    return train_inputs, train_targets, val_inputs, val_targets     
 
 
 def preprocess_data(raw_df: pd.DataFrame) -> dict:
@@ -131,29 +150,33 @@ def preprocess_data(raw_df: pd.DataFrame) -> dict:
     Returns:
     - result (dict): A dictionary containing the preprocessed data and transformers.
     """
-    train_df, val_df = split_data(raw_df)
-    input_cols = get_input_cols(raw_df)
-    numeric_cols = get_numeric_cols(train_df)
-    categorical_cols = get_categorical_cols(train_df)
+    train_df, val_df = split_data(raw_df, random_state=247)
+    input_cols, target_col = get_input_target_cols(raw_df)
 
-    encoder = train_encoder(train_df, ['Geography', 'Gender'])
-    train_df = transform_with_encoder(train_df, encoder, ['Geography', 'Gender'])
-    val_df = transform_with_encoder(val_df, encoder, ['Geography', 'Gender'])
+    train_inputs, train_targets, val_inputs, val_targets = split_into_inputs_and_targets(train_df, val_df, input_cols, target_col)
 
-    scaler = train_scaler(train_df, numeric_cols)
-    train_df = transform_with_scaler(train_df, scaler, numeric_cols)
-    val_df = transform_with_scaler(val_df, scaler, numeric_cols)
+    
+    numeric_cols = get_numeric_cols(train_inputs)
+    categorical_cols = get_categorical_cols(train_inputs)
 
-    X_train = train_df.drop(categorical_cols, axis=1)
-    X_val = val_df.drop(categorical_cols, axis=1)
+    encoder = train_encoder(train_inputs, ['Geography', 'Gender'])
+    train_inputs = transform_with_encoder(train_inputs, encoder, ['Geography', 'Gender'])
+    val_inputs = transform_with_encoder(val_inputs, encoder, ['Geography', 'Gender'])
+
+    scaler = train_scaler(train_df[input_cols], numeric_cols)
+    train_inputs = transform_with_scaler(train_inputs, scaler, numeric_cols)
+    val_inputs = transform_with_scaler(val_inputs, scaler, numeric_cols)
+
+    train_inputs = train_inputs.drop(categorical_cols, axis=1)
+    val_inputs = val_inputs.drop(categorical_cols, axis=1)
 
     input_cols = numeric_cols + encoder.get_feature_names_out(['Geography', 'Gender']).tolist()
 
     return {
-        'train_X': X_train,
-        'train_y': train_df['Exited'],
-        'val_X': X_val,
-        'val_y': val_df['Exited'],
+        'train_X': train_inputs,
+        'train_y': train_targets,
+        'val_X': val_inputs,
+        'val_y': val_targets,
         'input_cols': input_cols,
         'scaler': scaler,
         'encoder': encoder
@@ -161,7 +184,7 @@ def preprocess_data(raw_df: pd.DataFrame) -> dict:
 
 
 
-def preprocess_new_data(test_df: pd.DataFrame, encoder: OneHotEncoder, scaler: StandardScaler, input_cols: list) -> tuple:
+def preprocess_new_data(test_df: pd.DataFrame, encoder: OneHotEncoder, scaler: StandardScaler) -> tuple:
     """
     Preprocess new data using the already fit encoder and scaler.
 
@@ -169,7 +192,6 @@ def preprocess_new_data(test_df: pd.DataFrame, encoder: OneHotEncoder, scaler: S
     - test_df (pd.DataFrame): The new data to preprocess.
     - encoder (OneHotEncoder): The already fit OneHotEncoder.
     - scaler (StandardScaler): The already fit StandardScaler.
-    - input_cols (list): The input column names.
 
     Returns:
     - X_test (pd.DataFrame): The preprocessed new data.
@@ -183,57 +205,3 @@ def preprocess_new_data(test_df: pd.DataFrame, encoder: OneHotEncoder, scaler: S
     X_test = test_df.drop(categorical_cols, axis=1)
 
     return X_test
-
-
-
-
-# def preprocess_data(raw_df):
-
-
-#     train_df, val_df = train_test_split(raw_df, random_state=42, train_size=0.2, stratify=raw_df['Exited'])
-
-#     # Створюємо трен. і вал. набори
-#     input_cols = raw_df.columns[1:-1].tolist()
-#     target_col = raw_df.columns[-1]
-#     train_inputs, train_targets = train_df[input_cols], train_df[target_col]
-#     val_inputs, val_targets = val_df[input_cols], val_df[target_col]
-
-#     # Виявляємо числові і категоріальні колонки
-#     numeric_cols = train_inputs.select_dtypes('number').columns.tolist()
-#     categorical_cols = train_inputs.select_dtypes('object').columns.tolist()
-
-
-#     # тренуємо енкодер на тренувальних даних
-#     enc = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-#     enc.fit(train_inputs[['Geography', 'Gender']])
-#     encoded_cols = enc.get_feature_names_out(['Geography', 'Gender'])
-#     train_inputs[encoded_cols] = enc.transform(train_inputs[['Geography', 'Gender']])
-#     val_inputs[encoded_cols] = enc.transform(val_inputs[['Geography', 'Gender']])
-#     # train_inputs = train_inputs.drop(['Gender_Female'], axis=1)
-#     # val_inputs = val_inputs.drop(['Gender_Female'], axis=1)
-
-
-#     scaler = StandardScaler()
-#     # натренуємо скейлер на тренувальних даних
-#     scaler.fit(train_inputs[numeric_cols])
-
-#     # трансформуємо дані
-#     train_inputs[numeric_cols] = scaler.transform(train_inputs[numeric_cols])
-#     val_inputs[numeric_cols] = scaler.transform(val_inputs[numeric_cols])
-
-#     # train_inputs = train_inputs.drop(['CustomerId'], axis=1)
-#     # val_inputs = val_inputs.drop(['CustomerId'], axis=1)
-#     X_train = train_inputs.drop(categorical_cols, axis=1)
-#     X_val =  val_inputs.drop(categorical_cols, axis=1)
-
-#     input_cols = numeric_cols + encoded_cols.tolist()
-
-#     return {
-#         'train_X': X_train,
-#         'train_y': train_targets,
-#         'val_X': X_val,
-#         'val_y': val_targets,
-#         'input_cols': input_cols,
-#         'scaler': scaler,
-#         'encoder': enc
-#     }
