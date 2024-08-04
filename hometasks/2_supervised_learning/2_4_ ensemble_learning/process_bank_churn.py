@@ -223,7 +223,7 @@ def count_and_plot_auroc(model, inputs, targets, name='', plot=False):
     fpr, tpr, _ = roc_curve(targets, pred_proba, pos_label=1.)
     roc_auc = auc(fpr, tpr)
 
-    print(f'AUROC for {name}: {roc_auc:.2f}')
+    print(f'AUROC for {name}: {roc_auc:.5f}')
         
     if plot:
         plt.figure()
